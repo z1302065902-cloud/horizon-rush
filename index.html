@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>糖果跃动 — Candy Hop</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#87ceeb;touch-action:none;font-family:'Trebuchet MS',sans-serif}
+canvas{display:block}
+#hud{position:fixed;top:0;left:0;width:100%;padding:12px 16px;z-index:20;pointer-events:none;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.5);font-size:16px;font-weight:bold;display:flex;justify-content:space-between}
+#hud .coin{color:#ffd700}
+#overlay{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(180deg,#87ceeb,#7ef29e);text-align:center;font-family:inherit}
+#overlay h1{font-size:56px;color:#fff;text-shadow:3px 3px 0 #ff6b9d,0 0 30px rgba(255,255,255,.6);letter-spacing:6px}
+#overlay .sub{color:#fff;font-size:16px;margin:6px 0 24px;text-shadow:0 2px 4px rgba(0,0,0,.3)}
+#charSel{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;justify-content:center}
+.charcard{width:110px;height:140px;background:rgba(255,255,255,.35);border-radius:16px;border:3px solid transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:10px;transition:all .2s;backdrop-filter:blur(4px)}
+.charcard.sel{border-color:#ffd700;background:rgba(255,215,0,.4);transform:scale(1.06)}
+.charcard canvas{width:80px;height:80px;pointer-events:none}
+.charcard .nm{color:#fff;font-weight:bold;text-shadow:0 1px 3px rgba(0,0,0,.5);font-size:14px}
+.charcard .ab{color:#fff;font-size:10px;opacity:.9;margin-top:2px}
+#overlay button{margin-top:10px;padding:14px 60px;font-size:20px;font-weight:bold;letter-spacing:4px;color:#fff;background:linear-gradient(180deg,#ff9a56,#ff6b35);border:none;border-radius:40px;cursor:pointer;box-shadow:0 6px 0 #c74f22,0 8px 20px rgba(0,0,0,.3);transition:all .1s}
+#overlay button:active{transform:translateY(4px);box-shadow:0 2px 0 #c74f22}
+#joy{position:fixed;left:20px;bottom:24px;width:130px;height:130px;border:3px solid rgba(255,255,255,.5);border-radius:50%;z-index:25;display:none;background:rgba(255,255,255,.15)}
+#joy .knob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;background:rgba(255,255,255,.6);border-radius:50%}
+#jumpBtn{position:fixed;right:28px;bottom:34px;width:86px;height:86px;border-radius:50%;background:rgba(255,107,157,.75);border:3px solid #fff;color:#fff;font-size:18px;font-weight:bold;z-index:25;display:none;align-items:center;justify-content:center;box-shadow:0 4px 0 rgba(0,0,0,.2)}
+#hint{position:fixed;top:60px;left:50%;transform:translateX(-50%);color:#fff;background:rgba(0,0,0,.35);padding:6px 16px;border-radius:20px;font-size:13px;z-index:21;display:none;pointer-events:none}
+#msgbox{position:fixed;top:110px;left:50%;transform:translateX(-50%);color:#fff;background:rgba(0,0,0,.5);padding:8px 18px;border-radius:20px;font-size:15px;z-index:22;display:none;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><span class="coin" id="coinTxt">🪙 0</span><span id="lvlTxt">关卡 1</span><span id="charTxt"></span></div>
+<div id="hint">WASD/摇杆移动 · 空格/按钮跳跃 · 踩敌人 · 吃道具</div>
+<div id="msgbox"></div>
+<div id="joy"><div class="knob" id="knob"></div></div>
+<div id="jumpBtn">⬆</div>
+<div id="overlay">
+  <h1>糖果跃动</h1>
+  <div class="sub">选一个萌宠开始闯关！集金币 · 吃道具 · 跳向终点</div>
+  <div id="charSel"></div>
+  <button id="startBtn">开 始</button>
+</div>
+<script type="importmap">
+{"imports":{
+  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ============ 基础 ============
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x87ceeb);
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,200);
+const sun=new THREE.DirectionalLight(0xffffff,1.2);
+sun.position.set(10,20,8); sun.castShadow=true; scene.add(sun);
+scene.add(new THREE.AmbientLight(0xffffff,0.55));
+const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||('ontouchstart' in window);
+if(isMobile){document.getElementById('joy').style.display='block';document.getElementById('jumpBtn').style.display='flex';}
+const GLOADER=new GLTFLoader();
+
+// ============ 27B: 可爱动物角色建模 ============
+function createRabbit(color) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color });
+  const white = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), mat);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.7, 32, 32), mat);
+  head.position.y = 1.2;
+  const earGeo = new THREE.CapsuleGeometry(0.15, 0.8, 8, 16);
+  const earL = new THREE.Mesh(earGeo, mat); earL.position.set(-0.3, 2.0, 0);
+  const earR = new THREE.Mesh(earGeo, mat); earR.position.set(0.3, 2.0, 0);
+  const eyeGeo = new THREE.SphereGeometry(0.08, 16, 16);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+  const eyeL = new THREE.Mesh(eyeGeo, eyeMat); eyeL.position.set(-0.25, 1.3, 0.55);
+  const eyeR = new THREE.Mesh(eyeGeo, eyeMat); eyeR.position.set(0.25, 1.3, 0.55);
+  const tail = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), white);
+  tail.position.set(0, 0, -1);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.8, 32, 32), white);
+  belly.position.z = 0.2; belly.scale.set(1, 1, 0.5);
+  g.add(body, head, earL, earR, eyeL, eyeR, tail, belly);
+  return g;
+}
+function createBear(color) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), mat);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 16), mat);
+  head.position.y = 1.2;
+  const earL = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), mat);
+  earL.position.set(-0.5, 1.7, 0);
+  const earR = earL.clone(); earR.position.x = 0.5;
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 16), new THREE.MeshStandardMaterial({ color: 0x000000 }));
+  nose.position.set(0, 1.1, 0.6);
+  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 16, 16), new THREE.MeshStandardMaterial({ color: 0x000000 }));
+  eyeL.position.set(-0.25, 1.3, 0.55);
+  const eyeR = eyeL.clone(); eyeR.position.x = 0.25;
+  g.add(body, head, earL, earR, nose, eyeL, eyeR);
+  return g;
+}
+function createCat(color) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), mat);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 16), mat);
+  head.position.y = 1.2;
+  const earL = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.4, 16), mat);
+  earL.position.set(-0.4, 1.7, 0);
+  const earR = earL.clone(); earR.position.x = 0.4;
+  const whiskerL = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+  whiskerL.position.set(-0.4, 1.1, 0.5); whiskerL.rotation.z = Math.PI / 2;
+  const whiskerR = whiskerL.clone(); whiskerR.position.x = 0.4;
+  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 16, 16), new THREE.MeshStandardMaterial({ color: 0x000000 }));
+  eyeL.position.set(-0.25, 1.3, 0.55);
+  const eyeR = eyeL.clone(); eyeR.position.x = 0.25;
+  g.add(body, head, earL, earR, whiskerL, whiskerR, eyeL, eyeR);
+  return g;
+}
+function createPig(color) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), mat);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.6, 32, 32), mat);
+  head.position.set(0, 0.5, 1);
+  const earGeo = new THREE.SphereGeometry(0.2, 16, 16);
+  const earL = new THREE.Mesh(earGeo, mat); earL.position.set(-0.3, 0.9, 1);
+  const earR = new THREE.Mesh(earGeo, mat); earR.position.set(0.3, 0.9, 1);
+  const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.1, 16), new THREE.MeshStandardMaterial({ color: 0xffb6c1 }));
+  nose.rotation.x = Math.PI / 2; nose.position.set(0, 0.5, 1.55);
+  const eyeGeo = new THREE.SphereGeometry(0.08, 16, 16);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+  const eyeL = new THREE.Mesh(eyeGeo, eyeMat); eyeL.position.set(-0.2, 0.6, 1.45);
+  const eyeR = new THREE.Mesh(eyeGeo, eyeMat); eyeR.position.set(0.2, 0.6, 1.45);
+  const tail = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.05, 8, 16, Math.PI * 1.5), new THREE.MeshStandardMaterial({ color: 0xffb6c1 }));
+  tail.position.set(0, 0.5, 1.2);
+  g.add(body, head, earL, earR, nose, eyeL, eyeR, tail);
+  return g;
+}
+
+// ============ 27B: 角色配置 ============
+const CHARACTERS=[
+  {name:'闪电兔',create:createRabbit,color:0x8fd8ff,speed:9,jumpPower:13,doubleJump:true,attack:1,ab:'速度+二段跳'},
+  {name:'弹簧熊',create:createBear,color:0xc47a3a,speed:6.5,jumpPower:16,doubleJump:false,attack:2,ab:'高跳+强击'},
+  {name:'星星猫',create:createCat,color:0xffa040,speed:7.5,jumpPower:13,doubleJump:true,attack:2,ab:'均衡+二段跳'},
+  {name:'铁拳猪',create:createPig,color:0xff8fbf,speed:6,jumpPower:11,doubleJump:false,attack:3,ab:'力量+大范围'}
+];
+let player=null,playerMesh=null,selectedChar=0;
+
+// ============ 27B: 关卡配置（扩充为真正3关） ============
+const LEVELS=[
+ {name:'积木森林',theme:'forest',groundY:0,platforms:[[0,0,0,6,1,1],[8,0,2,2,1,1],[5,1,2,2,1,1],[13,0,4,2,1,1],[10,1,-1,2,1,1],[18,0,0,2,1,1],[15,2,1,3,1,1],[22,0,-2,2,1,1],[20,1,2,2,1,1],[27,0,0,3,1,1]],coins:[[3,1,0],[9,1,2],[6,2,2],[14,1,4],[11,2,-1],[16,3,1],[19,1,2],[23,1,-2],[21,2,2],[28,1,0]],enemies:[{type:'mushroom',x:12,z:0},{type:'robot',x:20,z:0}]},
+ {name:'果冻海洋',theme:'ocean',groundY:-1,platforms:[[0,0,0,5,1,1],[7,1,1,2,1,1],[11,-1,-1,3,1,1],[16,1,2,2,1,1],[20,-1,0,2,1,1],[25,1,-1,3,1,1],[30,0,0,3,1,1]],coins:[[3,1,0],[8,2,1],[12,0,-1],[17,2,2],[21,0,0],[26,2,-1],[31,1,0]],enemies:[{type:'robot',x:14,z:0},{type:'mushroom',x:24,z:0}]},
+ {name:'熔岩工厂',theme:'lava',groundY:-1.5,platforms:[[0,0,0,5,1,1],[6,-0.5,1,2,1,1],[10,0,-1,2,1,1],[14,-0.5,0,2,1,1],[18,0,1,2,1,1],[22,-0.5,-1,2,1,1],[26,0,0,3,1,1],[31,0,0,2,1,1]],coins:[[3,1,0],[7,0,1],[11,1,-1],[15,0,0],[19,1,1],[23,0,-1],[27,1,0],[32,1,0]],enemies:[{type:'mushroom',x:13,z:0},{type:'robot',x:21,z:0},{type:'mushroom',x:28,z:0}]}
+];
+const THEME_COLORS={forest:{sky:0x87ceeb,plat:0x4caf50,deco:[0x8bc34a,0x66bb6a,0x9ccc65]},ocean:{sky:0x29b6f6,plat:0x26c6da,deco:[0x4dd0e1,0x80deea,0x26a69a]},lava:{sky:0xff7043,plat:0x8d6e63,deco:[0xff5722,0xff7043,0xa1887f]}};
+let curLevel=0,world=null,levelObjects={coins:[],enemies:[],powerups:[],flag:null,decor:[]},levelTime=0,coinCount=0;
+
+// ============ 27B: 音效 ============
+let ctx=null,musicStop=null;
+const NOAUDIO=location.search.indexOf('noaudio')>=0;
+function ensureAudio(){if(ctx||NOAUDIO)return;try{ctx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+function startBGM() {
+  const bpm=[120,140,160][curLevel];
+  const notes=[261.6,329.6,392,523.3,392,329.6,440,392];
+  const bass=[130.8,164.8,196,261.6,196,164.8,220,196];
+  let i=0;
+  return setInterval(()=>{
+    const f=[notes[i%8],bass[i%8]];
+    [notes[i%8],bass[i%8]].forEach((freq,j)=>{
+      const o=ctx.createOscillator(),g=ctx.createGain();
+      o.type=j?'triangle':'square'; o.frequency.value=freq;
+      g.gain.setValueAtTime(j?0.08:0.07,ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+60/bpm);
+      o.connect(g).connect(ctx.destination); o.start(); o.stop(ctx.currentTime+60/bpm);
+    });
+    i++;
+  },60000/bpm);
+}
+function playJump(){if(!ctx)return;const o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.setValueAtTime(200,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(800,ctx.currentTime+0.1);g.gain.setValueAtTime(0.25,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.15);o.connect(g).connect(ctx.destination);o.start();o.stop(ctx.currentTime+0.15);}
+function playCoin(){if(!ctx)return;const o=ctx.createOscillator(),g=ctx.createGain();o.type='triangle';o.frequency.value=1200;g.gain.setValueAtTime(0.2,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.1);o.connect(g).connect(ctx.destination);o.start();o.stop(ctx.currentTime+0.1);}
+function playPowerUp(){if(!ctx)return;[440,554,659,880].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type='square';o.frequency.value=f;g.gain.setValueAtTime(0.12,ctx.currentTime+i*0.05);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.05+0.1);o.connect(g).connect(ctx.destination);o.start(ctx.currentTime+i*0.05);o.stop(ctx.currentTime+i*0.05+0.12);});}
+function playStomp(){if(!ctx)return;const o=ctx.createOscillator(),g=ctx.createGain();o.type='sawtooth';o.frequency.setValueAtTime(300,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(80,ctx.currentTime+0.2);g.gain.setValueAtTime(0.25,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.25);o.connect(g).connect(ctx.destination);o.start();o.stop(ctx.currentTime+0.25);}
+function playWin(){if(!ctx)return;[523,659,784,1046].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type='square';o.frequency.value=f;g.gain.setValueAtTime(0.15,ctx.currentTime+i*0.12);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.12+0.3);o.connect(g).connect(ctx.destination);o.start(ctx.currentTime+i*0.12);o.stop(ctx.currentTime+i*0.12+0.32);});}
+
+// ============ UI 提示 ============
+let msgTimer=null;
+function msg(t){
+  const mb=document.getElementById('msgbox');
+  mb.textContent=t; mb.style.display='block';
+  clearTimeout(msgTimer); msgTimer=setTimeout(()=>mb.style.display='none',2200);
+}
+
+// ============ 27B: 道具系统 ============
+const POWERUPS=[
+  {name:'boots',color:0xff4444,label:'加速靴'},{name:'shield',color:0x44ff44,label:'泡泡盾'},
+  {name:'magnet',color:0x4444ff,label:'吸金磁铁'},{name:'spring',color:0xffff44,label:'弹簧鞋'},
+  {name:'gun',color:0xff44ff,label:'泡泡枪'}
+];
+function spawnPowerUp(world,pos){
+  const p=POWERUPS[Math.floor(Math.random()*5)];
+  const mesh=new THREE.Mesh(new THREE.OctahedronGeometry(0.35),new THREE.MeshStandardMaterial({color:p.color,emissive:p.color,emissiveIntensity:.6}));
+  mesh.position.copy(pos); mesh.position.y=1.2;
+  world.add(mesh); levelObjects.powerups.push({mesh,type:p.name});
+}
+function applyPowerUp(type){
+  if(!player.effects)player.effects={};
+  player.effects[type]={active:true,timeLeft:{boots:8,shield:10,magnet:8,spring:6,gun:12}[type]||8};
+  if(type==='spring')player.springCount=3;
+  if(type==='gun')player.gunAmmo=6;
+  playPowerUp(); msg('✨ '+POWERUPS.find(p=>p.name===type).label+'！');
+}
+
+// ============ 关卡构建 ============
+function buildLevel(){
+  if(world){scene.remove(world);}
+  world=new THREE.Group(); scene.add(world);
+  levelObjects={coins:[],enemies:[],powerups:[],flag:null,decor:[]};
+  levelTime=0;
+  const L=LEVELS[curLevel], TC=THEME_COLORS[L.theme];
+  scene.background=new THREE.Color(TC.sky);
+  // 地面
+  const ground=new THREE.Mesh(new THREE.BoxGeometry(60,1,16),new THREE.MeshStandardMaterial({color:TC.plat}));
+  ground.position.set(24,L.groundY-0.5,0); world.add(ground);
+  // 平台
+  L.platforms.forEach(p=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(p[3],0.3,p[4]),new THREE.MeshStandardMaterial({color:TC.plat}));
+    m.position.set(p[0],p[1]+0.15,p[2]); m.castShadow=true; world.add(m);
+  });
+  // 装饰彩块（糖果感）
+  TC.deco.forEach((c,i)=>{
+    for(let j=0;j<8;j++){
+      const x=(Math.random()*55+2), z=(Math.random()-0.5)*12;
+      const d=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5),new THREE.MeshStandardMaterial({color:c}));
+      d.position.set(x,L.groundY+0.25+Math.random()*1.5,z); world.add(d);
+      levelObjects.decor.push({mesh:d,baseY:d.position.y});
+    }
+  });
+  // 金币
+  L.coins.forEach(cp=>{
+    const m=new THREE.Mesh(new THREE.TorusGeometry(0.35,0.08,8,20),new THREE.MeshStandardMaterial({color:0xffd700,emissive:0xffaa00,emissiveIntensity:.8}));
+    m.position.set(cp[0],cp[1]+0.8,cp[2]); m.rotation.x=Math.PI/2; world.add(m);
+    levelObjects.coins.push({mesh:m,baseY:m.position.y});
+  });
+  // 道具（每个关卡随机3个）
+  for(let i=0;i<3;i++)spawnPowerUp(world,new THREE.Vector3(Math.random()*30+5,L.groundY+0.3,(Math.random()-0.5)*8));
+  // 敌人
+  L.enemies.forEach(e=>{
+    const isMush=e.type==='mushroom';
+    const mesh=new THREE.Mesh(isMush?new THREE.SphereGeometry(0.4,10,10):new THREE.BoxGeometry(0.5,0.5,0.5),new THREE.MeshStandardMaterial({color:isMush?0xe53935:0x5e35b1}));
+    if(isMush){mesh.scale.y=0.8;}
+    mesh.position.set(e.x,L.groundY+0.3,e.z); world.add(mesh);
+    levelObjects.enemies.push({mesh,type:e.type,baseX:e.x,baseZ:e.z,dead:false,baseY:L.groundY+0.3});
+  });
+  // 终点旗
+  const flag=new THREE.Group();
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,3),new THREE.MeshStandardMaterial({color:0xeeeeee}));
+  pole.position.y=1.5; flag.add(pole);
+  const cloth=new THREE.Mesh(new THREE.ConeGeometry(0.5,0.8,3),new THREE.MeshStandardMaterial({color:0xffeb3b}));
+  cloth.position.set(0.3,2.6,0); cloth.rotation.z=-0.5; flag.add(cloth);
+  flag.position.set(31,L.groundY,0); world.add(flag);
+  levelObjects.flag=flag;
+  // 玩家
+  if(playerMesh){world.remove(playerMesh);}
+  const L2=LEVELS[curLevel];
+  playerMesh=new THREE.Group();
+  playerMesh.position.set(2,L2.groundY+1.5,0);
+  world.add(playerMesh);
+  loadCharModel(selectedChar,playerMesh);
+}
+
+// ============ 27B: 角色控制器（改造：平台碰撞+移动） ============
+function updatePlayer(dt){
+  if(!playerMesh)return;
+  const role=CHARACTERS[selectedChar];
+  let speed=role.speed;
+  if(player.effects&&player.effects.boots&&player.effects.boots.active)speed*=2;
+  let ix=0,iz=0;
+  if(isMobile){ix=joyVec.x;iz=joyVec.y;}
+  else{ if(keys['KeyW']||keys['ArrowUp'])iz-=1; if(keys['KeyS']||keys['ArrowDown'])iz+=1;
+        if(keys['KeyA']||keys['ArrowLeft'])ix-=1; if(keys['KeyD']||keys['ArrowRight'])ix+=1; }
+  const il=Math.hypot(ix,iz);
+  if(il>0){ix/=il;iz/=il;}
+  // 角色朝向
+  if(il>0){const t=Math.atan2(ix,iz);playerMesh.rotation.y=t;}
+  const nx=playerMesh.position.x+ix*speed*dt;
+  const nz=playerMesh.position.z+iz*speed*dt;
+  playerMesh.position.x=Math.max(-2,Math.min(33,nx));
+  playerMesh.position.z=Math.max(-5,Math.min(5,nz));
+  // 重力 + 跳跃
+  player.velY-=26*dt;
+  const L=LEVELS[curLevel];
+  let groundY=L.groundY;
+  let onAnyPlatform=false;
+  // 平台碰撞（站在平台上面）
+  const py=playerMesh.position.y+player.velY*dt;
+  for(const p of L.platforms){
+    const px=p[0],pz=p[2],pw=p[3],pd=p[4];
+    if(playerMesh.position.x>px-pw/2-0.3&&playerMesh.position.x<px+pw/2+0.3&&
+       playerMesh.position.z>pz-pd/2-0.3&&playerMesh.position.z<pz+pd/2+0.3){
+      onAnyPlatform=true;
+      if(py<=p[1]+0.3&&player.velY<=0){groundY=Math.max(groundY,p[1]+0.3);player.velY=0;}
+      else if(py>p[1]+0.3&&py<p[1]+0.6&&player.velY>0){player.velY=0;playerMesh.position.y=p[1]+0.6;}
+    }
+  }
+  playerMesh.position.y+=player.velY*dt;
+  if(onAnyPlatform&&playerMesh.position.y<=groundY+0.3){playerMesh.position.y=groundY+0.3;player.velY=0;player.onGround=true;player.jumps=0;}
+  else player.onGround=false;
+}
+function doJump(){
+  if(!playerMesh)return;
+  const role=CHARACTERS[selectedChar];
+  if(player.onGround){player.velY=role.jumpPower;player.onGround=false;player.jumps=1;playJump();}
+  else if(role.doubleJump&&player.jumps<2){player.velY=role.jumpPower*0.9;player.jumps=2;playJump();}
+  else if(player.springCount>0&&!player.onGround){player.velY=role.jumpPower*1.6;player.springCount--;playJump();}
+}
+
+// ============ 3D 角色模型加载 ============
+function loadCharModel(idx,parent){
+  const role=CHARACTERS[idx];
+  const m=role.create(role.color);
+  m.scale.setScalar(0.4);
+  m.position.y=0.35;
+  parent.add(m);
+}
+
+// ============ 选角界面（用3D模型预览） ============
+const charSelEl=document.getElementById('charSel');
+CHARACTERS.forEach((c,i)=>{
+  const card=document.createElement('div');
+  card.className='charcard'+(i===0?' sel':'');
+  card.innerHTML=`<canvas width=80 height=80></canvas><div class="nm">${c.name}</div><div class="ab">${c.ab}</div>`;
+  card.onclick=()=>{
+    document.querySelectorAll('.charcard').forEach(el=>el.classList.remove('sel'));
+    card.classList.add('sel'); selectedChar=i;
+  };
+  charSelEl.appendChild(card);
+  // 渲染动物预览（程序化）
+  const cv=card.querySelector('canvas');
+  const prenderer=new THREE.WebGLRenderer({canvas:cv,alpha:true});
+  const pscene=new THREE.Scene();
+  const pcam=new THREE.PerspectiveCamera(40,1,0.1,20);pcam.position.set(2,2,3);pcam.lookAt(0,1,0);
+  pscene.add(new THREE.AmbientLight(0xffffff,1));
+  const m=c.create(c.color); m.scale.setScalar(0.42); m.position.y=0.15;
+  pscene.add(m);
+  (function anim(){m.rotation.y+=0.03;prenderer.render(pscene,pcam);requestAnimationFrame(anim);})();
+});
+
+// ============ 控制 ============
+const keys={};
+addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if((e.code==='Space'||e.code==='ArrowUp')&&state==='playing'){e.preventDefault();doJump();}
+});
+addEventListener('keyup',e=>{keys[e.code]=false;});
+let joyTouch=null,joyOrigin=null,joyVec={x:0,y:0};
+const joyEl=document.getElementById('joy'),knob=document.getElementById('knob');
+canvas.addEventListener('touchstart',e=>{
+  for(const t of e.changedTouches){
+    if(!joyTouch&&t.clientX<innerWidth*0.4){joyTouch=t.identifier;joyOrigin={x:t.clientX,y:t.clientY};}
+  }
+},{passive:true});
+canvas.addEventListener('touchmove',e=>{
+  for(const t of e.changedTouches){
+    if(t.identifier===joyTouch){
+      let dx=t.clientX-joyOrigin.x,dy=t.clientY-joyOrigin.y;
+      const len=Math.hypot(dx,dy),max=45;
+      if(len>max){dx=dx/len*max;dy=dy/len*max;}
+      joyVec.x=dx/max; joyVec.y=-dy/max;
+      knob.style.transform=`translate(${dx}px,${dy}px)`;
+    }
+  }
+},{passive:true});
+canvas.addEventListener('touchend',e=>{
+  for(const t of e.changedTouches){
+    if(t.identifier===joyTouch){joyTouch=null;joyVec={x:0,y:0};knob.style.transform='translate(0,0)';}
+  }
+},{passive:true});
+document.getElementById('jumpBtn').addEventListener('touchstart',e=>{e.preventDefault();doJump();},{passive:false});
+document.getElementById('jumpBtn').addEventListener('click',doJump);
+
+// ============ 碰撞/收集/敌人 ============
+function collectCheck(){
+  const L=LEVELS[curLevel];
+  for(const c of levelObjects.coins){
+    if(c.taken)continue;
+    if(playerMesh.position.distanceTo(c.mesh.position)<1){
+      c.taken=true; world.remove(c.mesh); coinCount++; playCoin();
+      document.getElementById('coinTxt').textContent='🪙 '+coinCount;
+    }
+  }
+  // 磁铁吸金币
+  if(player.effects&&player.effects.magnet&&player.effects.magnet.active){
+    for(const c of levelObjects.coins){
+      if(c.taken)continue;
+      if(playerMesh.position.distanceTo(c.mesh.position)<5){
+        c.mesh.position.lerp(playerMesh.position,0.1);
+      }
+    }
+  }
+  // 道具
+  for(const pu of levelObjects.powerups){
+    if(pu.taken)continue;
+    if(playerMesh.position.distanceTo(pu.mesh.position)<1){pu.taken=true;world.remove(pu.mesh);applyPowerUp(pu.type);}
+  }
+  // 敌人
+  for(const en of levelObjects.enemies){
+    if(en.dead)continue;
+    const d=playerMesh.position.distanceTo(en.mesh.position);
+    if(d<0.7){
+      if(player.velY<-2){en.dead=true;world.remove(en.mesh);playStomp();}
+      else if(player.effects&&player.effects.shield&&player.effects.shield.active){player.effects.shield.active=false;msg('🛡 泡泡盾破碎！');playStomp();}
+      else if(player.effects&&player.effects.gun&&player.effects.gun.active){en.dead=true;world.remove(en.mesh);msg('💥 泡泡枪击退！');}
+      else die();
+    }
+  }
+  // 终点旗（水平距离检测）
+  const fdx=playerMesh.position.x-levelObjects.flag.position.x;
+  const fdz=playerMesh.position.z-levelObjects.flag.position.z;
+  if(Math.hypot(fdx,fdz)<1.5)nextLevel();
+}
+function die(){
+  if(player.invincible>0)return;
+  player.lives--;
+  player.invincible=1.5;
+  msg('💔 撞到了！剩余 '+player.lives+' 条命');
+  if(player.lives<=0){msg('游戏结束！');state='over';showOverlay('游戏结束','继续挑战下一局');}
+  else{playerMesh.position.set(2,LEVELS[curLevel].groundY+1.5,0);player.velY=0;}
+}
+function nextLevel(){
+  playWin();
+  if(curLevel<LEVELS.length-1){
+    curLevel++; coinCount+=10; msg('🏁 过关！+10金币');
+    document.getElementById('lvlTxt').textContent='关卡 '+(curLevel+1)+' · '+LEVELS[curLevel].name;
+    buildLevel();
+  }else{
+    msg('🎉 通关全部关卡！总分 '+coinCount);
+    state='over';showOverlay('🏆 全部通关！','总金币：'+coinCount+'  🎉 你太棒了');
+  }
+}
+
+// ============ 主循环 ============
+let state='menu',lastTime=performance.now(),deathTimer=0;
+const camTarget=new THREE.Vector3();
+function animate(){
+  requestAnimationFrame(animate);
+  const now=performance.now();let dt=Math.min(0.05,(now-lastTime)/1000);lastTime=now;
+  levelTime+=dt;
+  // 金币旋转
+  for(const c of levelObjects.coins){if(!c.taken){c.mesh.rotation.y+=dt*2;c.mesh.position.y=c.baseY+Math.sin(levelTime*3+c.mesh.position.x)*0.15;}}
+  // 道具旋转
+  for(const pu of levelObjects.powerups){if(!pu.taken){pu.mesh.rotation.y+=dt*2;pu.mesh.position.y=1.2+Math.sin(levelTime*2.5)*0.15;}}
+  // 装饰浮动
+  for(const d of levelObjects.decor){d.mesh.rotation.y+=dt*0.5;d.mesh.position.y=d.baseY+Math.sin(levelTime*2+d.mesh.position.x)*0.1;}
+  // 敌人 AI
+  for(const en of levelObjects.enemies){
+    if(en.dead)continue;
+    if(en.type==='mushroom'){en.mesh.position.y=en.baseY+Math.abs(Math.sin(levelTime*3))*0.5;}
+    else{en.mesh.position.x=en.baseX+Math.sin(levelTime*1.5)*1.5;}
+  }
+  // 旗飘
+  if(levelObjects.flag)levelObjects.flag.children[1].rotation.y=Math.sin(levelTime*3)*0.3;
+  // 效果计时
+  if(player&&player.effects){
+    for(const k in player.effects){
+      if(player.effects[k].active){player.effects[k].timeLeft-=dt;if(player.effects[k].timeLeft<=0)player.effects[k].active=false;}
+    }
+  }
+  if(state==='playing'){
+    updatePlayer(dt);
+    collectCheck();
+    if(player.invincible>0)player.invincible-=dt;
+    // 摄像机跟随
+    camTarget.set(playerMesh.position.x+3,playerMesh.position.y+4,playerMesh.position.z+6);
+    camera.position.lerp(camTarget,0.08);
+    camera.lookAt(playerMesh.position.x,playerMesh.position.y+1,playerMesh.position.z);
+    // 掉出世界
+    if(playerMesh.position.y<-15){player.lives--;if(player.lives<=0){msg('游戏结束');state='over';showOverlay('游戏结束','再来一局！');}else playerMesh.position.set(2,LEVELS[curLevel].groundY+1.5,0);}
+  }
+  renderer.render(scene,camera);
+}
+function showOverlay(t,s){
+  clearInterval(musicStop);
+  const ov=document.getElementById('overlay');
+  ov.querySelector('h1').textContent=t;
+  ov.querySelector('.sub').textContent=s;
+  ov.querySelector('#charSel').style.display='none';
+  ov.style.display='flex';
+}
+function startGame(){
+  document.getElementById('overlay').style.display='none';
+  state='playing';
+  curLevel=0; coinCount=0;
+  player={velY:0,onGround:true,jumps:0,lives:3,effects:{},springCount:0,gunAmmo:0};
+  document.getElementById('coinTxt').textContent='🪙 0';
+  document.getElementById('lvlTxt').textContent='关卡 1 · 积木森林';
+  document.getElementById('charTxt').textContent=CHARACTERS[selectedChar].name;
+  ensureAudio();
+  if(musicStop)clearInterval(musicStop);
+  if(!NOAUDIO)musicStop=startBGM();
+  buildLevel();
+}
+document.getElementById('startBtn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  startGame();
+});
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+// 初始演示相机（菜单背景）
+camera.position.set(16,8,16); camera.lookAt(16,0,0);
+buildLevel();
+// 调试钩子
+window.__game={start:startGame,state:()=>({state,curLevel,coinCount,lives:player?player.lives:3,char:selectedChar}),parts:()=>playerMesh&&playerMesh.children[0]?playerMesh.children[0].children.length:0,pos:()=>playerMesh?{x:+playerMesh.position.x.toFixed(1),y:+playerMesh.position.y.toFixed(1),z:+playerMesh.position.z.toFixed(1)}:null,jump:doJump,key:(c,d)=>{keys[c]=d;},teleport:(x,z)=>{playerMesh&&playerMesh.position.set(x,3,z);if(player)player.velY=-5;},pick:(i)=>{selectedChar=i;}};
+animate();
+</script>
+</body>
+</html>
