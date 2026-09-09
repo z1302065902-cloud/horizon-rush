@@ -27,13 +27,13 @@
   - 每局：4 角色轮换 → parts 断言(19/16/20/15) → 真实跳跃(y>1.0) → 移动(x>2.5) → teleport 过 3 关 → 验证通关 + 零 console 错误
   - 手机端：Playwright hasTouch 模拟 + 真实 TouchEvent 分发驱动摇杆（Touch 实例必须带 target，普通对象报错）
 
-### 部署
+### 部署（全部完成）
 - [✓] **GitHub**：git push 网络不通，改用 Contents API 上传（index.html 43912B + models3d 6 glb + PROGRESS.md 全成功）
 - [✓] **GitHub Pages**：构建成功，线上 index.html HTTP 200 / 43912B，Playwright 实测可玩（钩子✓ 跳2.7✓ parts=19✓ 过关✓ 零错误）
 - [✓] **Vercel**：`npx vercel --prod` 部署成功（Ready in 4s），文件清单确认含 models3d 全部 6 glb
 - [✓] **爱发电**：编辑页正文已更新为「全新视觉升级版」（公开页可见生效），商品 ¥7 保持不变；交付走「私信补发」无自动回复
-- [ ] **itch.io**：⚠️ 网络不通（itch.io 12/12 超时，DNS 被污染指向 157.240/199.59 段均连不上）→ 待网络恢复后重跑：
-  `node ~/.game-factory/tools/itch-publish.mjs "horizon-rush" "糖果跃动 Candy Hop" "<新描述>" /tmp/candy-hop.zip /tmp/candy_menu.png`
+- [✓] **itch.io**：⚠️发现旧项目是《地平线狂飙 HORIZON RUSH》（标题/上传文件全是旧游戏）→ 已修复：改标题为「糖果跃动 Candy Hop」+ 删旧文件 + candy-hop.zip 设为 embed+可见（POST 200 保存成功）→ 线上验证：页面标题正确，游戏 frame 加载 candy-hop.zip，钩子✓ 跳2.8✓ parts=19✓ 过关✓ 零错误
+- [✓] 5 平台全部上线，全部实测验证通过
 
 ## 关键信息
 - 打包：`/tmp/candy-hop.zip`（1.34MB，index.html + models3d/，已验证完整）
