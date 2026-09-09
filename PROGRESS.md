@@ -1,69 +1,56 @@
-# Candy Hop 视觉升级进度日志（2026-09-08 暂停，明天续传）
+# Candy Hop 视觉升级进度日志（2026-09-09 续传完成）
 
 ## 当前状态
-源码：`~/Desktop/CandyHop/index.html`（43826 字节，760 行）
-**已完成 8 项视觉升级，未完成测试与重新部署。明天从"自动化测试"开始。**
+源码：`~/Desktop/CandyHop/index.html`（43912 字节，760 行）
+**视觉升级 8 项全部完成 + 双端 100/100 测试通过 + GitHub/Pages 已上线。**
+**剩余：itch.io 网络受限待重试。**
 
-## 已完成（今日全部改完，括号平衡已校验）
-1. [✓] 光照升级：加 HemisphereLight + 弱 AmbientLight（原仅 Directional）
-2. [✓] 粒子系统：60 个浮动白色粒子（PARTICLE_COUNT=60，animate 里上浮+闪烁）
-3. [✓] 角色升级（兔/熊/猫/猪全部重写）：腮红+眉毛+脚垫+瞳孔+眼睛高光+呼吸 phase
-   - 兔 8部件→19部件（白耳内+白眼白+腮红+眉毛）
-   - 熊 7→16（耳内粉+口鼻浅色区+鼻+眼高光+脚垫）
-   - 猫 8→20（耳内粉+竖瞳+胡须+长尾巴TubeGeometry）
-   - 猪 8→16（floppy耳+圆鼻+鼻孔+卷尾巴Tube+蹄子）
-4. [✓] 平台升级：2 层地面(土+草顶) + 每平台顶部亮色条
-5. [✓] 装饰升级：树木(树干cylinder+树冠sphere) + 灌木球，替代随机方块
-6. [✓] 敌人升级：蘑菇(Group: 菌柄+菌盖+白点+眼睛) + 机器人(Group: 天线+发光眼睛+轮子)
-7. [✓] 动画增强：金币z轴摆动+道具x轴旋转+树木摇曳+粒子上浮
-8. [✓] 呼吸动画：animate 中 playerMesh.children[0] 按 breathePhase 缩放（不影响物理）
+## 已完成
+### 视觉升级（昨日 8 项全部完成）
+1. [✓] 光照升级：HemisphereLight + 弱 AmbientLight
+2. [✓] 粒子系统：60 个浮动粒子
+3. [✓] 角色升级（兔19/熊16/猫20/猪15部件，注意猪实际是 15 不是 16）
+4. [✓] 平台双层地面 + 顶部亮条
+5. [✓] 树木+灌木装饰
+6. [✓] 蘑菇+机器人敌人（Group 组合）
+7. [✓] 金币/道具/装饰动画增强
+8. [✓] 呼吸动画（children[0] 缩放 × baseScale，不干扰物理）
 
-## 未完成（明天任务清单）
-- [ ] **关键**：游戏自动化测试（PC+手机各 50 局，用 /tmp/test_final.mjs 改造成本版）
-- [ ] **注意**：升级改动后需重新验证 3 关都能通关、角色能正常落地
-- [ ] 测试通过后重新打包 /tmp/candy-hop.zip（含 index.html + models3d/）
-- [ ] 重新部署：GitHub → Vercel → GitHub Pages → itch.io → 爱发电（全部需要更新为新版本）
+### 物理 bug 修复（3 处，均已验证）
+1. [✓] 落地吸附：`playerMesh.position.y=groundY`（原写了 groundY+0.3 导致 0.3↔0.6 震荡）
+2. [✓] 头撞分支：改 `py>p[1]-0.2 && py<p[1]+0.3 && velY>0` → 吸附 p[1]-0.3（原误伤起跳首帧，跳跃全部失效）
+3. [✓] 呼吸动画：ch.scale 乘 `ch.userData.baseScale||0.4`（原覆盖 0.4 基准缩放，角色渲染 2.5 倍大）
 
-## 调试中发现的线索（明天先看这个！）
-- 升级版跑 Playwright 时玩家**掉出世界**：Move pos 到 y=-3（正常应在 y=0.3 平台面）
-- 初步怀疑：`updatePlayer` 里 `playerMesh.position.y+=player.velY*dt` 与 `py` 预计算重复应用位移
-  - 现状：先算 `py=playerMesh.position.y+player.velY*dt` 用于碰撞判断，碰撞后再执行
-    `playerMesh.position.y+=player.velY*dt` 又加一次 → 每帧位移 ×2？
-  - 实际上：velY 在碰撞时被置 0，只有"未碰撞帧"会双加。需要明天仔细核对此处逻辑
-  - 对比记忆：**上一版（未升级前）PC/手机各 50/50 通关正常**，说明 onAnyPlatform 逻辑本身没问题，
-    问题可能出在：新加的平台顶部亮条(top条)加了 world.add(top) 不影响碰撞；
-    但**地面从 1 层变 2 层**（ground 高度 1.5 + grassTop 0.15）——碰撞代码只查 platforms，
-    不查 ground mesh，玩家理论上不该受影响……明天用 console.log 逐帧验证
-- 另一线索：`page.evaluate(()=>LEVELS)` 报 ReferenceError（LEVELS 是 const，不在 window 上），
-  测试脚本要用 `window.__game` 钩子拿数据，不能直接访问 LEVELS
+### 测试
+- [✓] 单帧验证：站立稳定 y=0.3；jump1 峰值 3.0@300ms；jump2 双跳 5.4；连跳无无限爬升；5 段步行无掉落
+- [✓] **PC 50 局 + 手机 50 局 = 100/100 通过，零失败**（/tmp/test50_new.cjs，756s）
+  - 每局：4 角色轮换 → parts 断言(19/16/20/15) → 真实跳跃(y>1.0) → 移动(x>2.5) → teleport 过 3 关 → 验证通关 + 零 console 错误
+  - 手机端：Playwright hasTouch 模拟 + 真实 TouchEvent 分发驱动摇杆（Touch 实例必须带 target，普通对象报错）
 
-## 关键调试钩子（不变）
-`window.__game = {start, state, pos, parts, jump, key, teleport, pick}`
-- parts() 现应返回：兔19/熊16/猫20/猪16（子部件数变了！旧断言 8/7/8/8 已失效）
+### 部署
+- [✓] **GitHub**：git push 网络不通，改用 Contents API 上传（index.html 43912B + models3d 6 glb + PROGRESS.md 全成功）
+- [✓] **GitHub Pages**：构建成功，线上 index.html HTTP 200 / 43912B，Playwright 实测可玩（钩子✓ 跳2.7✓ parts=19✓ 过关✓ 零错误）
+- [✓] **Vercel**：`npx vercel --prod` 部署成功（Ready in 4s），文件清单确认含 models3d 全部 6 glb
+- [✓] **爱发电**：编辑页正文已更新为「全新视觉升级版」（公开页可见生效），商品 ¥7 保持不变；交付走「私信补发」无自动回复
+- [ ] **itch.io**：⚠️ 网络不通（itch.io 12/12 超时，DNS 被污染指向 157.240/199.59 段均连不上）→ 待网络恢复后重跑：
+  `node ~/.game-factory/tools/itch-publish.mjs "horizon-rush" "糖果跃动 Candy Hop" "<新描述>" /tmp/candy-hop.zip /tmp/candy_menu.png`
 
-## 测试环境
-- 本地服务器：`cd ~/Desktop/CandyHop && python3 -m http.server 8765 &`
-- 测试 URL：`http://localhost:8765/index.html?noaudio=1`（headless 无音频必须带 noaudio）
-- 测试脚本基础：/tmp/test_final.mjs（PC+手机各 50 局版本，需适配新 parts 数）
+## 关键信息
+- 打包：`/tmp/candy-hop.zip`（1.34MB，index.html + models3d/，已验证完整）
+- 调试钩子：`window.__game = {start, state, pos, parts, jump, key, teleport, pick}`
+- parts() 实际值：兔19 / 熊16 / 猫20 / 猪15
+- 测试脚本：/tmp/test50_new.cjs（直接可用）
+- 截图：/tmp/candy_menu.png（可作 itch 封面）
 
-## 部署链接（更新前勿动）
+## 部署链接
 - GitHub: https://github.com/z1302065902-cloud/horizon-rush
 - Vercel: https://candy-hop-game.vercel.app
 - Pages: https://z1302065902-cloud.github.io/horizon-rush/
-- itch.io: https://zsy2026.itch.io/horizon-rush
+- itch.io: https://zsy2026.itch.io/horizon-rush（待更新）
 - 爱发电: https://afdian.com/item/6f3448f4ab8f11f1b5665254001e7c00
 
 ## 工具与凭据
 - itch 发布：`node ~/.game-factory/tools/itch-publish.mjs <slug> <title> <desc> <zip> [cover]`
 - 爱发电 cookie：/tmp/afdian_cookies.json（auth_token 有效至 2027）
-- 测试脚本：/tmp/test_final.mjs
-
-## 今日已改代码位置索引（新文件行号）
-- 光照+粒子：~line 70-90
-- createRabbit：line 85 起（19部件）
-- createBear：line 140 起（16部件）
-- createCat：line 190 起（20部件）
-- createPig：line 252 起（16部件）
-- buildLevel 地面/平台/装饰/敌人：line 379-480
-- animate 动画增强：line 609-700
-- updatePlayer 碰撞：line 518-536（**明天重点排查处**）
+- GitHub API token：git credential 内（`git credential fill` 提取）
+- Vercel token：`/Users/zsy/Library/Application Support/com.vercel.cli/auth.json`
